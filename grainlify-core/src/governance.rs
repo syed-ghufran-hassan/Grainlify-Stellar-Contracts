@@ -342,6 +342,42 @@ impl GovernanceContract {
 
         false
     }
+
+    /// Get the status of a proposal by ID
+    pub fn get_proposal_status(env: Env, proposal_id: u32) -> Result<ProposalStatus, Error> {
+        let proposals: Map<u32, Proposal> = env
+            .storage()
+            .instance()
+            .get(&PROPOSALS)
+            .ok_or(Error::ProposalsNotFound)?;
+        let proposal = proposals.get(proposal_id).ok_or(Error::ProposalNotFound)?;
+        Ok(proposal.status)
+    }
+
+    /// Sweep expired proposals (those that never reached a final state)
+    pub fn sweep_expired_proposal(env: Env, proposal_id: u32, current_time: u64) -> Result<(), Error> {
+        let mut proposals: Map<u32, Proposal> = env
+            .storage()
+            .instance()
+            .get(&PROPOSALS)
+            .ok_or(Error::ProposalsNotFound)?;
+        let mut proposal = proposals.get(proposal_id).ok_or(Error::ProposalNotFound)?;
+
+        // Only sweep proposals that are still active and past their voting end
+        if proposal.status != ProposalStatus::Active {
+            return Err(Error::ProposalNotActive);
+        }
+
+        if current_time <= proposal.voting_end {
+            return Err(Error::VotingStillActive);
+        }
+
+        // Mark as expired
+        proposal.status = ProposalStatus::Expired;
+        proposals.set(proposal_id, proposal);
+        env.storage().instance().set(&PROPOSALS, &proposals);
+        Ok(())
+    }
 }
 
 /// Derives voting power for the configured scheme.
